@@ -12,58 +12,62 @@ use App\Http\Controllers\JournalController;
 use App\Http\Controllers\NewspaperController;
 use App\Http\Controllers\StudentController;
 use App\Http\Controllers\LecturerController;
-Route::redirect('/laravel/login', '/login')->name('login');
-Route::get('/login', function () {
-    return view('login'); 
-})->name('login');
-
-Route::post('/login', [AuthController::class, 'login']);
-Route::post('/register', [AuthController::class, 'register']);
-Route::get('/', function () {
-    return view('welcome');
-});
-
 use Illuminate\Foundation\Auth\EmailVerificationRequest;
-Auth::routes();
-// Verification Notice
-Route::get('/email/verify', function () {
-    return view('auth.verify-email');
-})->middleware('auth')->name('verification.notice');
 
-// routes/web.php
+// Redirect the home route to posts
+Route::redirect('/', 'posts');
 
-Route::middleware(['auth'])->group(function () {
-    Route::get('/dashboard', [AuthController::class, 'dashboard'])->name('dashboard');
+// Posts Routes
+Route::resource('posts', PostController::class);
+
+// User Posts Route
+Route::get('/{user}/posts', [DashboardController::class, 'userPosts'])->name('posts.user');
+
+// Routes for authenticated users
+Route::middleware('auth')->group(function () {
+    // User Dashboard Route
+    Route::get('/dashboard', [DashboardController::class, 'index'])->middleware('verified')->name('dashboard');
+
+    // Logout Route
+    Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
+
+    // Email Verification Notice route
+    Route::get('/email/verify', [AuthController::class, 'verifyEmailNotice'])->name('verification.notice');
+
+    // Email Verification Handler route
+    Route::get('/email/verify/{id}/{hash}', [AuthController::class, 'verifyEmailHandler'])->middleware('signed')->name('verification.verify');
+
+    // Resending the Verification Email route
+    Route::post('/email/verification-notification', [AuthController::class, 'verifyEmailResend'])->middleware('throttle:6,1')->name('verification.send');
 });
 
+// Routes for guest users
+Route::middleware('guest')->group(function () {
+    // Register Routes
+    Route::view('/register', 'auth.register')->name('register');
+    Route::post('/register', [AuthController::class, 'register']);
 
-// Email Verification Handler
-Route::get('/email/verify/{id}/{hash}', function (EmailVerificationRequest $request) {
-    $request->fulfill();
+    // Login Routes
+    Route::view('/login', 'auth.login')->name('login');
+    Route::post('/login', [AuthController::class, 'login']);
 
-    return redirect('/home');
-})->middleware(['auth', 'signed'])->name('verification.verify');
+    // Reset Password Routes
+    Route::view('/forgot-password', 'auth.forgot-password')->name('password.request');
+    Route::post('/forgot-password', [ResetPasswordController::class, 'passwordEmail']);
+    Route::get('/reset-password/{token}', [ResetPasswordController::class, 'passwordReset'])->name('password.reset');
+    Route::post('/reset-password', [ResetPasswordController::class, 'passwordUpdate'])->name('password.update');
+});
 
-// Resend Verification Email
-Route::post('/email/verification-notification', function (Request $request) {
-    $request->user()->sendEmailVerificationNotification();
+// Admin and Librarian Routes
 
-    return back()->with('message', 'Verification link sent!');
-})->middleware(['auth', 'throttle:6,1'])->name('verification.send');
-
-
-// Protect all routes with authentication middleware
 Route::group(['middleware' => 'auth:sanctum'], function () {
 
     // Admin routes
     Route::prefix('admin')->group(function () {
-        Route::prefix('admin')->group(function () {
-            Route::post('/books/{book}/approve', [AdminController::class, 'approveBook'])->name('admin.books.approve');
-            Route::post('/books/{book}/reject', [AdminController::class, 'rejectBook'])->name('admin.books.reject');
-            Route::get('/books', [AdminController::class, 'showBooks']);
-            Route::post('/books', [AdminController::class, 'updateBookStatus'])->name('admin.books.status');
-            
-        });
+        Route::post('/books/{book}/approve', [AdminController::class, 'approveBook'])->name('admin.books.approve');
+        Route::post('/books/{book}/reject', [AdminController::class, 'rejectBook'])->name('admin.books.reject');
+        Route::get('/books', [AdminController::class, 'showBooks']);
+        Route::post('/books', [AdminController::class, 'updateBookStatus'])->name('admin.books.status');
         
         // Librarian Management Routes
         Route::get('/librarians', [AdminController::class, 'index']); // List of librarians
@@ -84,18 +88,14 @@ Route::group(['middleware' => 'auth:sanctum'], function () {
         Route::get('/books', [BookController::class, 'index'])->name('books.index');
         Route::get('/cds', [CDController::class, 'index'])->name('cds.index');
         Route::get('/journals', [JournalController::class, 'index'])->name('journals.index');
-        Route::get('/journals/create', [JournalController::class, 'index'])->name('journals.create');
+        Route::get('/journals/create', [JournalController::class, 'create'])->name('journals.create');
         Route::get('/newspapers', [NewspaperController::class, 'index'])->name('newspapers.index');
-        Route::get('/newspapers/create', [NewspaperController::class, 'index'])->name('newspapers.create');
+        Route::get('/newspapers/create', [NewspaperController::class, 'create'])->name('newspapers.create');
         Route::post('/books/create', [BookController::class, 'create'])->name('books.create');
         Route::post('/cds/create', [CDController::class, 'create'])->name('cds.create');
         
         // Collection Updates Request Routes
         Route::post('/collection-updates', [LibrarianController::class, 'requestCollectionUpdate']); // Request collection update
-        
-        // // Reservation Management Routes
-        // Route::get('/reservations', [LibrarianController::class, 'indexReservations']); // View reservations
-        // Route::post('/reservations/{id}', [LibrarianController::class, 'updateReservationStatus']); // Approve/Reject reservation
         
     });
 
@@ -103,7 +103,19 @@ Route::group(['middleware' => 'auth:sanctum'], function () {
     Route::resource('books', BookController::class);
 });
 
+// Student and Lecturer Routes
 Route::get('/students', [StudentController::class, 'index'])->name('students.index');
 Route::post('/students/borrow', [StudentController::class, 'borrow'])->name('students.borrow');
 Route::get('/lecturers', [LecturerController::class, 'index'])->name('lecturers.index');
 Route::post('/lecturers/borrow', [LecturerController::class, 'borrow'])->name('lecturers.borrow');
+
+// Email Verification Routes (Handled manually)
+Route::get('/email/verify/{id}/{hash}', function (EmailVerificationRequest $request) {
+    $request->fulfill();
+    return redirect('/dashboard'); // Redirect to your desired location after verification
+})->middleware(['auth', 'signed'])->name('verification.verify');
+
+Route::post('/email/verification-notification', function (Request $request) {
+    $request->user()->sendEmailVerificationNotification();
+    return back()->with('message', 'Verification link sent!');
+})->middleware(['auth', 'throttle:6,1'])->name('verification.send');

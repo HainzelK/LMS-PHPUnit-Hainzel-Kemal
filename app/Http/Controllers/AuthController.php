@@ -82,6 +82,28 @@ class AuthController extends Controller
         }
     }
     
+        // Verify Email Notice Handler
+        public function verifyEmailNotice()
+        {
+            return view('auth.verify-email');
+        }
+    
+        // Email Verification Handler
+        public function verifyEmailHandler(EmailVerificationRequest $request)
+        {
+            $request->fulfill();
+    
+            return redirect()->route('dashboard');
+        }
+    
+        // Resending the Verification Email Handler
+        public function verifyEmailResend(Request $request)
+        {
+            $request->user()->sendEmailVerificationNotification();
+    
+            return back()->with('message', 'Verification link sent!');
+        }
+    
     
 
     public function dashboard()
