@@ -17,7 +17,7 @@ Route::post('/register', [AuthController::class, 'register']);
 
 // Protect all routes with authentication middleware
 Route::group(['middleware' => 'auth:sanctum'], function () {
-
+    Route::get('/dashboard', [AuthController::class, 'dashboard'])->name('dashboard');
     // Admin routes
     Route::prefix('admin')->group(function () {
         

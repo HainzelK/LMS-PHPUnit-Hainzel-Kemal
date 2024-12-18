@@ -25,8 +25,6 @@ class AuthController extends Controller
             ],
             'phone_number' => 'required|string|unique:users',
             'password' => 'required|string|min:6|confirmed',  // Add confirmed validation
-        ], [
-            'email.regex' => 'The email domain must be @gmail.com.', // Custom error message
         ]);
     
         if ($validator->fails()) {
@@ -54,29 +52,44 @@ class AuthController extends Controller
     public function login(Request $request)
     {
         $request->validate([
-            'phone_number' => 'required|string',
+            'email_or_phone' => 'required|string',
             'password' => 'required|string',
         ]);
-
+    
         try {
-            $user = User::where('phone_number', $request->phone_number)->first();
-
+            // Check if the input is an email or a phone number
+            $user = User::where('phone_number', $request->email_or_phone)
+                        ->orWhere('email', $request->email_or_phone)
+                        ->first();
+    
             if ($user && Hash::check($request->password, $user->password)) {
                 if (!$user->hasVerifiedEmail()) {
                     return back()->withErrors(['verification_error' => 'Please verify your email address before logging in.']);
                 }
-
+    
                 auth()->login($user);
-
+    
+                // Log user authentication (debugging)
+                \Log::info('User logged in:', ['user_id' => $user->id]);
+    
                 // Redirect to the dashboard
-                return redirect()->route('dashboard');  // Redirecting to the dashboard route
+                return redirect()->route('dashboard');
             }
-
-            return back()->withErrors(['login_error' => 'Invalid phone number or password.']);
+    
+            return back()->withErrors(['login_error' => 'Invalid email/phone number or password.']);
         } catch (\Exception $e) {
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
+    
+    
+
+    public function dashboard()
+{
+    // You can pass any data to the dashboard view if needed
+    return view('dashboard');
+}
+
 
     public function logout()
     {
