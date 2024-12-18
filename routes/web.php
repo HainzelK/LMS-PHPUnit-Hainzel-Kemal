@@ -23,6 +23,28 @@ Route::get('/', function () {
     return view('welcome');
 });
 
+use Illuminate\Foundation\Auth\EmailVerificationRequest;
+Auth::routes();
+// Verification Notice
+Route::get('/email/verify', function () {
+    return view('auth.verify-email');
+})->middleware('auth')->name('verification.notice');
+
+// Email Verification Handler
+Route::get('/email/verify/{id}/{hash}', function (EmailVerificationRequest $request) {
+    $request->fulfill();
+
+    return redirect('/home');
+})->middleware(['auth', 'signed'])->name('verification.verify');
+
+// Resend Verification Email
+Route::post('/email/verification-notification', function (Request $request) {
+    $request->user()->sendEmailVerificationNotification();
+
+    return back()->with('message', 'Verification link sent!');
+})->middleware(['auth', 'throttle:6,1'])->name('verification.send');
+
+
 // Protect all routes with authentication middleware
 Route::group(['middleware' => 'auth:sanctum'], function () {
 

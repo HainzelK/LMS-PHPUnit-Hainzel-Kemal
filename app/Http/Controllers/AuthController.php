@@ -3,93 +3,85 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
-use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Log;
-use Laravel\Sanctum\HasApiTokens;
 
 class AuthController extends Controller
 {
-    use HasApiTokens;
     public function register(Request $request)
     {
-        
         // Validate input
         $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255', // Use 'name' instead of 'username'
-            'phone_number' => 'required|string|unique:users,phone_number', // Ensure it's string for compatibility
-            'password' => 'required|string|min:6',
+            'name' => 'required|string|max:255',
+            'email' => [
+                'required',
+                'string',
+                'email',
+                'max:255',
+                'unique:users',
+                'regex:/^[a-zA-Z0-9._%+-]+@gmail\.com$/', // Only allows @gmail.com emails
+            ],
+            'phone_number' => 'required|string|unique:users',
+            'password' => 'required|string|min:6|confirmed',  // Add confirmed validation
+        ], [
+            'email.regex' => 'The email domain must be @gmail.com.', // Custom error message
         ]);
-
+    
         if ($validator->fails()) {
             return back()->withErrors($validator)->withInput();
         }
-
+    
         try {
-            // Save the user in the database
-            User::create([
-                'name' => $request->name, // Updated to 'name'
+            // Create user
+            $user = User::create([
+                'name' => $request->name,
+                'email' => $request->email,
                 'phone_number' => $request->phone_number,
                 'password' => Hash::make($request->password),
             ]);
-            return 'Register successful';
-            // return redirect()->route('login')->with('success', 'Registration successful!');
+    
+            // Dispatch Registered event
+            event(new Registered($user));
+    
+            return redirect()->route('verification.notice');
         } catch (\Exception $e) {
             return response()->json(['error' => $e->getMessage()], 500);
         }
-
-        
     }
 
-
-    // Fitur Login
     public function login(Request $request)
     {
         $request->validate([
             'phone_number' => 'required|string',
             'password' => 'required|string',
         ]);
-    
+
         try {
             $user = User::where('phone_number', $request->phone_number)->first();
-    
+
             if ($user && Hash::check($request->password, $user->password)) {
-                Auth::login($user);
-    
-                // Generate token for API authentication
-                $token = $user->createToken('auth_token')->plainTextToken;
-                session(['auth_token' => $token]);
-    
-                // Check roles by existence in admin or librarian tables
-                if (\DB::table('admin')->where('user_id', $user->id)->exists()) {
-                    // Redirect to the admin route
-                    return redirect()->route('admin.librarians.index')->with('success', 'Login successful');
-                } elseif (\DB::table('librarians')->where('user_id', $user->id)->exists()) {
-                    // Redirect to the librarian route
-                    return redirect()->route('books.index')->with('success', 'Login successful');
+                if (!$user->hasVerifiedEmail()) {
+                    return back()->withErrors(['verification_error' => 'Please verify your email address before logging in.']);
                 }
-    
-                // Default fallback for unclassified users
-                return redirect('/')->with('error', 'Unauthorized access.');
+
+                auth()->login($user);
+
+                // Redirect to the dashboard
+                return redirect()->route('dashboard');  // Redirecting to the dashboard route
             }
-    
-            return back()->withErrors(['login_error' => 'Invalid phone number or password.'])->withInput();
+
+            return back()->withErrors(['login_error' => 'Invalid phone number or password.']);
         } catch (\Exception $e) {
-            Log::error($e->getMessage());
-            return back()->withErrors(['unexpected_error' => 'An unexpected error occurred.']);
+            return response()->json(['error' => $e->getMessage()], 500);
         }
     }
-    
-        
-        
-    // Logout
+
     public function logout()
     {
-        session()->forget('user');
+        auth()->logout();
 
-        return redirect()->route('login')->with('success', 'You have been logged out.');
+        return response()->json(['message' => 'You have been logged out.']);
     }
 }
